@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "main"
+version = "1.0.0"
+description = "TerminusDB Todo Backend (feat. FastAPI)"
+authors = ["Dmytri Kleiner <dk@terminusdb.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = "^0.61.1"
+
+[tool.poetry.dev-dependencies]
+pydoc2md = "^0.0.0"
+pycco = "^0.6.0"
+uvicorn = "^0.12.2"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.poetry.scripts]
+start = 'start:app'
