@@ -1,53 +1,61 @@
-from typing import Literal, Type
+from terminusdb_client import WOQLClient
+from terminusdb_client import WOQLQuery as Q
+
+DB = WOQLClient("https://127.0.0.1:6363", insecure=True)
+DB.connect(user="admin", account="admin", key="root",
+        db="TodoMVC", insecure=True)
 
 from fastapi import FastAPI
-from enum import Enum
+
+from typing import Literal, Type
 from pydantic import BaseModel
 
 app = FastAPI()
 
-class TodoCreated(BaseModel):
-    id: str
-    title: str
-
-class TodoAlteredTitle(BaseModel):
+class TodoTitle(BaseModel):
     value: str
 
-class TodoAlteredCompleted(BaseModel):
-    key:  Literal['completed']
+class TodoCompleted(BaseModel):
     value: bool
 
-class TodoRemoved(BaseModel):
-    id: str
+@app.get("/todo")
+async def state():
+    data = Q().woql_and(
+        Q().triple("v:doc", "type", "scm:Todo"),
+        Q().triple("v:Doc", "scm:title", "v:Title"),
+        Q().triple("v:Doc", "scm:completed", "v:Completed")
+    ).execute(DB)
+    bindings = data['bindings']
+    todos = []
+    for i in bindings:
+        todos.append({
+            "id": i["Doc"],
+            "title": i["Title"]["@value"],
+            "completed": i["Completed"]["@value"]
+        })
+    return todos 
 
-class TodoToggled(BaseModel):
-    completed: bool
+@app.put("/todo/{id}")
+async def create (data: TodoTitle):
+    return {"id": id, "title": data.value}
 
-@app.post("/create/{todo_created}")
-async def create (todo: TodoCreated):
-    return {"id": todo.id, "title": todo.title}
+@app.patch("/todo/{id}/title")
+async def title(data: TodoTitle):
+    return {"id": id, "value": data.value}
 
-@app.patch("/alter/title/{todo_altered_title}")
-async def alter(todo: TodoAlteredTitle):
-    return {"id": todo.id, "value": todo.value}
+@app.patch("/todo/{id}/completed")
+async def completed(data: TodoCompleted):
+    return {"id": id, "value": data.value}
 
-@app.patch("/alter/completed/{todo_altered_completed}")
-async def alter(todo: TodoAlteredCompleted):
-    return {"id": todo.id, "value": todo.value}
+@app.delete("/todo/{id}/remove")
+async def remove():
+    return {"id": id}
 
-@app.delete("/remove/{todo_removed}")
-async def remove(todo: TodoRemoved):
-    return {"id": todo.id}
+@app.post("/todo/toggle/")
+async def toggle(data: TodoCompleted):
+    return {"completed": data.value}
 
-@app.post("/toggle/{todo_toggled}")
-async def toggle(todo: TodoToggled):
-    return {"conmpleted": todo.completed}
-
-@app.post("/clear")
+@app.post("/todo/clear")
 async def clear():
     return {"clear": "clear"}
-
-@app.get("/state")
-async def state():
-    return {"state": "state"}
 
