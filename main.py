@@ -7,10 +7,15 @@ DB.connect(user="admin", account="admin", key="root",
 
 from fastapi import FastAPI
 
-from typing import Literal, Type
+from typing import List, Literal, Type
 from pydantic import BaseModel
 
 app = FastAPI()
+
+class Todo(BaseModel):
+    id: str
+    title: str
+    completed: bool
 
 class TodoTitle(BaseModel):
     value: str
@@ -18,22 +23,38 @@ class TodoTitle(BaseModel):
 class TodoCompleted(BaseModel):
     value: bool
 
-@app.get("/todo")
+@app.get("/todo", response_model=List[Todo])
 async def state():
     data = Q().woql_and(
         Q().triple("v:doc", "type", "scm:Todo"),
         Q().triple("v:Doc", "scm:title", "v:Title"),
         Q().triple("v:Doc", "scm:completed", "v:Completed")
     ).execute(DB)
-    bindings = data['bindings']
+    bindings = data["bindings"]
     todos = []
-    for i in bindings:
+    for item in bindings:
         todos.append({
-            "id": i["Doc"],
-            "title": i["Title"]["@value"],
-            "completed": i["Completed"]["@value"]
+            "id": item["Doc"],
+            "title": item["Title"]["@value"],
+            "completed": item["Completed"]["@value"]
         })
     return todos 
+
+@app.get("/todo/{id}", response_model=Todo)
+async def item(id: str):
+    data = Q().limit(1).woql_and(
+        Q().triple(id, "type", "scm:Todo"),
+        Q().triple(id, "scm:title", "v:Title"),
+        Q().triple(id, "scm:completed", "v:Completed")
+    ).execute(DB)
+    if data["bindings"]:
+        item = data["bindings"][0]
+        todo = {
+            "id": id,
+            "title": item["Title"]["@value"],
+            "completed": item["Completed"]["@value"]
+        }
+    return todo 
 
 @app.put("/todo/{id}")
 async def create (data: TodoTitle):
