@@ -5,9 +5,10 @@ DB = WOQLClient("https://127.0.0.1:6363", insecure=True)
 DB.connect(user="admin", account="admin", key="root",
         db="TodoMVC", insecure=True)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 
-from typing import List, Literal, Type
+from typing import List
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -17,16 +18,22 @@ class Todo(BaseModel):
     title: str
     completed: bool
 
+class TodoId(BaseModel):
+    id: str
+
 class TodoTitle(BaseModel):
     value: str
 
 class TodoCompleted(BaseModel):
     value: bool
 
+class ErrorMessage(BaseModel):
+    message: str
+
 @app.get("/todo", response_model=List[Todo])
 async def state():
     data = Q().woql_and(
-        Q().triple("v:doc", "type", "scm:Todo"),
+        Q().triple("v:Doc", "type", "scm:Todo"),
         Q().triple("v:Doc", "scm:title", "v:Title"),
         Q().triple("v:Doc", "scm:completed", "v:Completed")
     ).execute(DB)
@@ -44,21 +51,36 @@ async def state():
 async def item(id: str):
     data = Q().limit(1).woql_and(
         Q().triple(id, "type", "scm:Todo"),
-        Q().triple(id, "scm:title", "v:Title"),
-        Q().triple(id, "scm:completed", "v:Completed")
+        Q().triple("v:Doc", "type", "scm:Todo"),
+        Q().triple("v:Doc", "scm:title", "v:Title"),
+        Q().triple("v:Doc", "scm:completed", "v:Completed")
     ).execute(DB)
     if data["bindings"]:
         item = data["bindings"][0]
         todo = {
-            "id": id,
+            "id": item["Doc"],
             "title": item["Title"]["@value"],
             "completed": item["Completed"]["@value"]
         }
     return todo 
 
-@app.put("/todo/{id}")
-async def create (data: TodoTitle):
-    return {"id": id, "title": data.value}
+
+@app.post("/todo/{id}", status_code=201, responses={
+    201: {"model": TodoId},
+    409: {"model": ErrorMessage}
+})
+async def create (id: str, data: TodoTitle):
+    result = Q().woql_and(
+            Q().add_triple(id, 'type', 'scm:Todo'),
+            Q().add_triple(id, 'title',
+                Q().literal(data.value, 'string')),
+            Q().add_triple(id, 'completed',
+                Q().literal(False, 'boolean'))
+        ).execute(DB)
+    if result["inserts"] == 0:
+        return JSONResponse(status_code=409,
+            content={"message": "Conflict"})
+    return {"id": id}
 
 @app.patch("/todo/{id}/title")
 async def title(data: TodoTitle):
