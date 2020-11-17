@@ -64,41 +64,70 @@ async def item(id: str):
         }
     return todo 
 
-
 @app.post("/todo/{id}", status_code=201, responses={
     201: {"model": TodoId},
     409: {"model": ErrorMessage}
 })
 async def create (id: str, data: TodoTitle):
     result = Q().woql_and(
-            Q().add_triple(id, 'type', 'scm:Todo'),
-            Q().add_triple(id, 'title',
-                Q().literal(data.value, 'string')),
-            Q().add_triple(id, 'completed',
-                Q().literal(False, 'boolean'))
-        ).execute(DB)
+        Q().add_triple(id, 'type', 'scm:Todo'),
+        Q().add_triple(id, 'title',
+            Q().literal(data.value, 'string')),
+        Q().add_triple(id, 'completed',
+            Q().literal(False, 'boolean'))
+    ).execute(DB)
     if result["inserts"] == 0:
         return JSONResponse(status_code=409,
             content={"message": "Conflict"})
     return {"id": id}
 
 @app.patch("/todo/{id}/title")
-async def title(data: TodoTitle):
+async def title(id: str, data: TodoTitle):
+    result = Q().woql_and(
+        Q().triple(id, 'title', 'v:Value'),
+        Q().delete_triple(id, 'title', 'v:Value'),
+        Q().add_triple(id, 'title',
+            Q().literal(data.value, 'string'))
+    ).execute(DB)
     return {"id": id, "value": data.value}
 
 @app.patch("/todo/{id}/completed")
-async def completed(data: TodoCompleted):
-    return {"id": id, "value": data.value}
+async def completed(id: str, data: TodoCompleted):
+    result = Q().woql_and(
+        Q().triple(id, 'completed', not data.value),
+        Q().delete_triple(id, 'completed', not data.value),
+        Q().add_triple(id, 'completed',
+            Q().literal(data.value, 'boolean'))
+    ).execute(DB)
+    return {"id": id, "value": data.value, "result": result}
 
 @app.delete("/todo/{id}/remove")
-async def remove():
-    return {"id": id}
+async def remove(id: str):
+    result = Q().woql_and(
+        Q().triple(id, 'v:Predicate', 'v:Object'),
+        Q().delete_triple(id, 'v:Predicate', 'v:Object')
+    ).execute(DB)
+    return {"id": id, "result": result}
 
 @app.post("/todo/toggle/")
 async def toggle(data: TodoCompleted):
-    return {"completed": data.value}
+    result = Q().woql_and(
+        Q().triple('v:Doc', 'completed',
+            Q().literal(not data.value, 'boolean')),
+        Q().delete_triple('v:Doc', 'completed',
+            Q().literal(not data.value, 'boolean')),
+        Q().add_triple('v:Doc', 'completed',
+            Q().literal(data.value, 'boolean'))
+    ).execute(DB)
+    return {"result": result}
 
-@app.post("/todo/clear")
+@app.delete("/todo/clear")
 async def clear():
-    return {"clear": "clear"}
+    result = Q().woql_and(
+        Q().triple('v:Doc', 'completed',
+            Q().literal(True, 'boolean')),
+        Q().triple('v:Doc', 'v:Predicate', 'v:Object'),
+        Q().delete_triple('v:Doc', 'v:Predicate', 'v:Object')
+    ).execute(DB)
+    return {"result": result}
 
