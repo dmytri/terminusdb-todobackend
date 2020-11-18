@@ -41,7 +41,7 @@ async def state():
     todos = []
     for item in bindings:
         todos.append({
-            "id": item["Doc"],
+            "id": item["Doc"].split("///data/")[1],
             "title": item["Title"]["@value"],
             "completed": item["Completed"]["@value"]
         })
@@ -51,14 +51,13 @@ async def state():
 async def item(id: str):
     data = Q().limit(1).woql_and(
         Q().triple(id, "type", "scm:Todo"),
-        Q().triple("v:Doc", "type", "scm:Todo"),
-        Q().triple("v:Doc", "scm:title", "v:Title"),
-        Q().triple("v:Doc", "scm:completed", "v:Completed")
+        Q().triple(id, "scm:title", "v:Title"),
+        Q().triple(id, "scm:completed", "v:Completed")
     ).execute(DB)
     if data["bindings"]:
         item = data["bindings"][0]
         todo = {
-            "id": item["Doc"],
+            "id": id,
             "title": item["Title"]["@value"],
             "completed": item["Completed"]["@value"]
         }
