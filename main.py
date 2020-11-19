@@ -8,7 +8,7 @@ DB.connect(user="admin", account="admin", key="root",
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.responses import JSONResponse
 
-from typing import List
+from typing import List, Dict
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -17,6 +17,11 @@ class Todo(BaseModel):
     id: str
     title: str
     completed: bool
+    links: Dict
+
+class State(BaseModel):
+    todos: List[Todo]
+    links: Dict
 
 class TodoId(BaseModel):
     id: str
@@ -30,83 +35,99 @@ class TodoCompleted(BaseModel):
 class ErrorMessage(BaseModel):
     message: str
 
-@app.get("/todo", response_model=List[Todo])
+@app.get("/todo", response_model=State)
 async def state():
-    data = Q().woql_and(
+    result = Q().woql_and(
         Q().triple("v:Doc", "type", "scm:Todo"),
         Q().triple("v:Doc", "scm:title", "v:Title"),
         Q().triple("v:Doc", "scm:completed", "v:Completed")
     ).execute(DB)
-    bindings = data["bindings"]
+    bindings = result["bindings"]
     todos = []
     for item in bindings:
-        todos.append({
-            "id": item["Doc"].split("///data/")[1],
+        ID = item["Doc"].split("///data/")[1]
+        todos.append({"id": ID,
             "title": item["Title"]["@value"],
-            "completed": item["Completed"]["@value"]
-        })
-    return todos 
+            "completed": item["Completed"]["@value"],
+            "links": {
+                "todo": f"/todo/{ID}",
+                "remove": f"/todo/{ID}/remove",
+                "title": f"/todo/{ID}/title",
+                "completed": f"/todo/{ID}/completed"
+        }})
+    state = {"todos": todos,
+            "links": {
+                 "toggle": f"/todo/toggle",
+                 "clear": f"/todo/clear",
+            }}
+    return state
 
-@app.get("/todo/{id}", response_model=Todo)
-async def item(id: str):
+@app.get("/todo/{ID}", response_model=Todo)
+async def item(ID: str):
     data = Q().limit(1).woql_and(
-        Q().triple(id, "type", "scm:Todo"),
-        Q().triple(id, "scm:title", "v:Title"),
-        Q().triple(id, "scm:completed", "v:Completed")
+        Q().triple(ID, "type", "scm:Todo"),
+        Q().triple(ID, "scm:title", "v:Title"),
+        Q().triple(ID, "scm:completed", "v:Completed")
     ).execute(DB)
     if data["bindings"]:
         item = data["bindings"][0]
         todo = {
-            "id": id,
+            "id": ID,
             "title": item["Title"]["@value"],
-            "completed": item["Completed"]["@value"]
+            "completed": item["Completed"]["@value"],
+            "links": {
+                "todo": f"/todo/{ID}",
+                "remove": f"/todo/{ID}/remove",
+                "title": f"/todo/{ID}/title",
+                "completed": f"/todo/{ID}/completed"
+            }
         }
     return todo 
 
-@app.post("/todo/{id}", status_code=201, responses={
+@app.post("/todo/{ID}", status_code=201, responses={
     201: {"model": TodoId},
     409: {"model": ErrorMessage}
 })
-async def create (id: str, data: TodoTitle):
+async def create (ID: str, data: TodoTitle):
     result = Q().woql_and(
-        Q().add_triple(id, 'type', 'scm:Todo'),
-        Q().add_triple(id, 'title',
+        Q().add_triple(ID, 'type', 'scm:Todo'),
+        Q().add_triple(ID, 'title',
             Q().literal(data.value, 'string')),
-        Q().add_triple(id, 'completed',
+        Q().add_triple(ID, 'completed',
             Q().literal(False, 'boolean'))
     ).execute(DB)
     if result["inserts"] == 0:
         return JSONResponse(status_code=409,
             content={"message": "Conflict"})
-    return {"id": id}
+    return {"id": ID}
 
-@app.patch("/todo/{id}/title")
-async def title(id: str, data: TodoTitle):
+@app.patch("/todo/{ID}/title")
+async def title(ID: str, data: TodoTitle):
     result = Q().woql_and(
-        Q().triple(id, 'title', 'v:Value'),
-        Q().delete_triple(id, 'title', 'v:Value'),
-        Q().add_triple(id, 'title',
+        Q().triple(ID, 'title', 'v:Value'),
+        Q().delete_triple(ID, 'title', 'v:Value'),
+        Q().add_triple(ID, 'title',
             Q().literal(data.value, 'string'))
     ).execute(DB)
-    return {"id": id, "value": data.value}
+    return {"id": ID, "value": data.value}
 
-@app.patch("/todo/{id}/completed")
-async def completed(id: str, data: TodoCompleted):
+@app.patch("/todo/{ID}/completed")
+async def completed(ID: str, data: TodoCompleted):
     result = Q().woql_and(
-        Q().triple(id, 'completed', not data.value),
-        Q().delete_triple(id, 'completed', not data.value),
-        Q().add_triple(id, 'completed',
+        Q().triple(ID, 'completed', not data.value),
+        Q().delete_triple(ID, 'completed', not data.value),
+        Q().add_triple(ID, 'completed',
             Q().literal(data.value, 'boolean'))
     ).execute(DB)
-    return {"id": id, "value": data.value, "result": result}
+    return {"id": ID, "value": data.value, "result": result}
 
-@app.delete("/todo/{id}/remove")
-async def remove(id: str):
+@app.delete("/todo/{ID}/remove")
+async def remove(ID: str):
     result = Q().woql_and(
-        Q().triple(id, 'v:Predicate', 'v:Object'),
-        Q().delete_triple(id, 'v:Predicate', 'v:Object')
+        Q().triple(ID, 'v:Predicate', 'v:Object'),
+        Q().delete_triple(ID, 'v:Predicate', 'v:Object')
     ).execute(DB)
-    return {"id": id, "result": result}
+    return {"id": ID, "result": result}
 
 @app.post("/todo/toggle/")
 async def toggle(data: TodoCompleted):
